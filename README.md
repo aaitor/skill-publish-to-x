@@ -73,8 +73,9 @@ checks that the credentials belong to the `--account` handle, and stops if they 
    links) and 4 images. Check current prices in the developer console and set a spending
    cap there.
 
-Endpoints used: `GET /2/users/me`, `POST /2/media/upload` (one-shot image upload, 5 MB
-maximum) and `POST /2/tweets`. All accept OAuth 1.0a user context.
+Endpoints used: `GET /2/users/me`, `POST /2/media/upload` (one-shot image upload: PNG,
+JPG or WEBP, 5 MB maximum, up to 4 per post) and `POST /2/tweets`. All accept OAuth 1.0a
+user context.
 
 ## Tests
 

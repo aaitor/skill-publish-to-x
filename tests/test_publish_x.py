@@ -166,6 +166,13 @@ def test_image_problems_are_reported(tmp_path):
     assert len(errors) == 6
 
 
+def test_gif_is_rejected_not_uploaded_as_an_image(tmp_path):
+    # ponytail check: animated GIFs need media_category tweet_gif (and maybe chunked upload)
+    write_piece(tmp_path, "", ("anim.GIF",))
+    errors = check(tmp_path, {}, ("a",), {1: ("assets/anim.GIF",)}, "aaitor", False)
+    assert errors == ["assets/anim.GIF: GIFs are not supported; use PNG, JPG or WEBP"]
+
+
 # --- account guard ---------------------------------------------------------------------
 
 def test_file_account_mismatch_needs_explicit_target(tmp_path):

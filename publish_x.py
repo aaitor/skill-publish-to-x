@@ -72,7 +72,7 @@ def parse(text: str) -> tuple[dict[str, str], tuple[str, ...], Images]:
     meta = {
         key.strip(): val.strip().strip("\"'")
         for key, sep, val in (line.partition(":") for line in lines[1:end])
-        if sep and not key.lstrip().startswith("#")
+        if sep
     }
     body = "\n".join(lines[end + 1:])
     images: Images = {}
@@ -91,6 +91,9 @@ def _image_errors(folder: Path, paths: tuple[str, ...]) -> list[str]:
         path = (folder / rel).resolve()
         if not path.is_relative_to(root):
             errors.append(f"{rel} is outside {folder}")
+        elif path.suffix.lower() == ".gif":
+            # ponytail: animated GIFs need media_category tweet_gif; add when a thread needs one
+            errors.append(f"{rel}: GIFs are not supported; use PNG, JPG or WEBP")
         elif not path.is_file():
             errors.append(f"{rel} is not a file")
         elif path.stat().st_size > MAX_IMAGE_BYTES:
