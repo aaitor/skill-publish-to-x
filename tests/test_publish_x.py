@@ -59,6 +59,13 @@ def test_link_counts_as_23_whatever_its_length():
     assert x_length(f"see {long} and http://b.co") == 4 + 23 + 5 + 23
 
 
+def test_trailing_punctuation_is_not_part_of_the_link():
+    # X stops a link before closing punctuation, so it counts as text; swallowing it under-counts.
+    assert x_length("(https://hcompany.ai)") == 1 + 23 + 1
+    assert x_length("see https://a.io/x.") == 4 + 23 + 1
+    assert x_length("https://a.io/x?y=1&z=2") == 23
+
+
 def test_280_is_allowed_and_281_is_not(tmp_path):
     ok, too_long = "a" * 280, "a" * 281
     for text, errors in ((ok, 0), (too_long, 1)):
@@ -232,6 +239,16 @@ def test_failure_mid_thread_reports_what_is_live(tmp_path):
     msg = str(err.value)
     assert "post 3 of 4 failed" in msg
     assert "https://x.com/aaitor/status/t1" in msg and "https://x.com/aaitor/status/t2" in msg
+
+
+def test_response_without_an_id_still_reports_what_is_live(tmp_path):
+    client = fake_client()
+    client.create_tweet.side_effect = [SimpleNamespace(data={"id": "t1"}), SimpleNamespace(data=None)]
+    with pytest.raises(RuntimeError) as err:
+        publish(client, tmp_path, ("a", "b", "c"), {}, "aaitor")
+    msg = str(err.value)
+    assert "post 2 of 3 failed" in msg and "https://x.com/aaitor/status/t1" in msg
+    assert "check https://x.com/aaitor" in msg
 
 
 # --- credentials -----------------------------------------------------------------------

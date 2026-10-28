@@ -36,7 +36,8 @@ ENV_VARS = ("X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_TOKEN_SECRE
 
 COMMENT = re.compile(r"<!--(.*?)-->", re.S)
 SEPARATOR = re.compile(r"(?m)^---\s*$")
-URL = re.compile(r"https?://\S+")
+# A link ends before trailing punctuation, which X counts as text: "(https://a.io)." is 23 + 3.
+URL = re.compile(r"""https?://\S*[^\s.,;:!?)\]}'"]""")
 POST_REF = re.compile(r"\bpost\s+(\d+)", re.I)
 IMAGE = re.compile(r"[\w./-]+\.(?:png|jpe?g|gif|webp)\b", re.I)
 HANDLE = re.compile(r"[A-Za-z0-9_]{1,15}")
@@ -144,10 +145,14 @@ def publish(client: tweepy.Client, folder: Path, posts: tuple[str, ...], images:
             response = client.create_tweet(
                 text=text, media_ids=media.get(n), in_reply_to_tweet_id=ids[-1] if ids else None, user_auth=True
             )
+            post_id = response.data["id"]
         except Exception as e:
             live = "\n".join(f"  {_url(account, i)}" for i in ids) or "  none"
-            raise RuntimeError(f"post {n} of {len(posts)} failed: {e}\nalready live:\n{live}") from e
-        ids = [*ids, response.data["id"]]
+            raise RuntimeError(
+                f"post {n} of {len(posts)} failed: {e!r}\nalready live:\n{live}\n"
+                f"check https://x.com/{account} for post {n} itself before doing anything else"
+            ) from e
+        ids = [*ids, post_id]
         print(f"posted {n}/{len(posts)}: {_url(account, ids[-1])}")
     return ids
 

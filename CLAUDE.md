@@ -7,4 +7,5 @@ A Claude Code skill: `SKILL.md` (contract) + `publish_x.py` (script) + `tests/`.
 - No credentials anywhere in the repo; they come from the `X_*` environment variables only.
 - Never run `--live` without the user's explicit go-ahead for that thread.
 - The `x.md` format and counting rules follow nevermined-io/gtm `content/README.md` and
-  `content/check.py`; keep `x_length` and the post split in step with them.
+  `content/check.py`; keep the post split in step with them. `x_length` is deliberately
+  stricter than `check.py`: a link stops before trailing punctuation, as on X.
