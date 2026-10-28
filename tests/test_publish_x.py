@@ -136,6 +136,11 @@ def test_several_images_on_one_post_and_case_insensitive():
     assert parse(text)[2] == {2: ("assets/a.PNG", "assets/b.jpg", "assets/c.webp")}
 
 
+def test_an_image_named_twice_for_a_post_is_attached_once():
+    text = doc("<!-- post 1: assets/a.png, assets/a.png -->\n<!-- post 1: assets/a.png and assets/b.png -->\nhi")
+    assert parse(text)[2] == {1: ("assets/a.png", "assets/b.png")}
+
+
 def test_comment_without_images_maps_nothing():
     assert parse(doc("<!-- One post, or a thread: post 1 is the hook -->\nhi"))[2] == {}
 
@@ -320,6 +325,7 @@ def test_live_with_problems_never_builds_a_client(tmp_path):
 def test_live_posts_after_checking_the_account(hcompany, capsys):
     client = fake_client()
     assert main([str(hcompany), "--account", "aaitor", "--live"], client_factory=lambda: client) == 0
+    assert client.mock_calls[0][0] == "get_me"
     assert client.create_tweet.call_count == 4
     assert "https://x.com/aaitor/status/t4" in capsys.readouterr().out
 

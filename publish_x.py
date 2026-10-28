@@ -78,7 +78,7 @@ def parse(text: str) -> tuple[dict[str, str], tuple[str, ...], Images]:
     images: Images = {}
     for comment in COMMENT.findall(body):
         for n, paths in _comment_images(comment).items():
-            images[n] = images.get(n, ()) + paths
+            images[n] = tuple(dict.fromkeys(images.get(n, ()) + paths))  # each image once per post
     # Comments are guidance, never posted, so they never count toward 280.
     posts = tuple(p.strip() for p in SEPARATOR.split(COMMENT.sub("", body)) if p.strip())
     return meta, posts, images
@@ -87,7 +87,7 @@ def parse(text: str) -> tuple[dict[str, str], tuple[str, ...], Images]:
 def _image_errors(folder: Path, paths: tuple[str, ...]) -> list[str]:
     root = folder.resolve()
     errors = []
-    for rel in dict.fromkeys(paths):
+    for rel in paths:
         path = (folder / rel).resolve()
         if not path.is_relative_to(root):
             errors.append(f"{rel} is outside {folder}")
