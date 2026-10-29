@@ -76,7 +76,7 @@ def _front_matter_end(lines: list[str]) -> int | None:
     if not head or not META_LINE.match(head[0]):
         return None  # a leading --- divider, not front matter
     if end is None:
-        raise ValueError("front matter is not closed (add a --- line after it)")
+        raise ValueError("front matter is not closed: add a --- line after it, or remove the leading --- if it is a post")
     return end if all(META_LINE.match(line) for line in head) else None
 
 

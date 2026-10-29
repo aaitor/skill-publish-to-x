@@ -119,6 +119,7 @@ def test_a_leading_divider_is_not_front_matter():
     assert parse("---\nNote: we shipped\n---\nmore") == ({}, ("Note: we shipped", "more"), {})
     assert parse("---\nhttps://example.com is live\n---\nmore") == ({}, ("https://example.com is live", "more"), {})
     assert parse("---\nnote: shipped today\nand it works\n---\nmore")[1] == ("note: shipped today\nand it works", "more")
+    assert parse("---\n---\nhello") == ({}, ("hello",), {})
 
 
 def test_front_matter_may_start_with_a_comment_line():
@@ -126,8 +127,11 @@ def test_front_matter_may_start_with_a_comment_line():
 
 
 def test_unclosed_front_matter_is_an_error():
-    with pytest.raises(ValueError, match="front matter"):
-        parse("---\naccount: alice\nno closing line")
+    # Unclosed "key: value" lines may be front matter missing its --- or a post after a divider:
+    # never post them, and name both fixes.
+    for text in ("---\naccount: alice\nno closing line", "---\nnote: just shipped this"):
+        with pytest.raises(ValueError, match="add a --- line after it, or remove the leading ---"):
+            parse(text)
 
 
 def test_single_post_has_no_separators():

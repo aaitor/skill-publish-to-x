@@ -221,7 +221,7 @@ scripts/publish_x.py      CLI: parse, check, upload images, post the thread
 scripts/test_publish_x.py tests (X client mocked; one runs real tweepy signing with the network faked)
 ```
 
-Run the tests with `uv run --no-project --with pytest --with tweepy==4.17.0 pytest -q scripts`. No test calls X. Issues and pull requests are welcome.
+Run the tests with `uv run --no-project --with pytest --with tweepy==4.17.0 pytest -q scripts` and lint with `ruff check --line-length 120 .`. No test calls X. Issues and pull requests are welcome.
 
 ## License
 
