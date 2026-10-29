@@ -1,0 +1,30 @@
+name: Repository quality
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install development dependencies
+        run: python3 -m pip install -r requirements-dev.txt
+      - name: Run existing offline CLI tests
+        run: python3 -m pytest -q scripts
+      - name: Lint
+        run: ruff check --line-length 120 .
+      - name: Check documentation, SVGs, and real dry-run examples
+        run: python3 scripts/check.py

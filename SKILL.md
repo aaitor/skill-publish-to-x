@@ -48,16 +48,16 @@ account: theirhandle
 
 Setup errors:
 
-- `missing credentials: ...`: the one-time setup is not done. Walk the user through `<skill-dir>/README.md`, sections "Create an X app" and "Configuration". Never ask the user to paste a key or token into the chat.
+- `missing credentials: ...`: the one-time setup is not done. Walk the user through `<skill-dir>/docs/installation.md`, sections "Create an X app" and "Configuration". Never ask the user to paste a key or token into the chat.
 - `no account to post to`: pass `--account <handle>` or have the user set `X_ACCOUNT`.
 - `the X credentials are for @a, not @b`: the keys belong to another account. Stop and tell the user.
-- `401 Unauthorized`: wrong or revoked keys. `403 Forbidden` on posting: the access token is read-only (README, Troubleshooting).
+- `401 Unauthorized`: wrong or revoked keys. `403 Forbidden` on posting: the access token is read-only (`docs/troubleshooting.md`).
 - Cannot reach X or install `tweepy`: the sandbox blocks the network. Request approval to run with network access.
 
 ## Notes
 
 - **Credentials:** the script reads them itself. Never read, print, copy or commit the credentials file or any `X_*` value, and never ask the user to paste one into the chat.
-- **Cost:** X bills each request (pay-per-use credits). A post with a link costs much more than one without. Check prices in the README.
+- **Cost:** Live mode uses X API credits; check current pricing using `<skill-dir>/docs/cost.md`. Dry runs make no X API requests.
 - **Threads:** number posts (`1/`, `2/`) if the user wants; the script does not add numbering.
 - **Length:** X weighs emoji and CJK characters as 2; the counter counts them as 1, so keep a margin when a post uses them.
 - **Not supported:** video, GIF, polls, quote posts, editing, deleting and scheduling. For scheduled runs, publish only text the user approved word for word.

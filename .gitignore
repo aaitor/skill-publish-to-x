@@ -3,3 +3,10 @@ __pycache__/
 .coverage
 .venv/
 .env
+
+.env.*
+!.env.example
+credentials.env
+*.pyc
+.ruff_cache/
+.DS_Store
