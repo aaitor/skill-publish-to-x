@@ -1,8 +1,12 @@
 # Changelog
 
-## Unreleased
+## v1.0 — 2026-10-29
 
-- Apply the shared open-source repository format: branded banner, focused README, detailed guides, and community files.
-- Add a real Claude Code installation/preview demo on a black background, stopping at approval without posting.
-- Add offline CI, documentation checks, and runnable single-post/thread examples.
-- Preserve the existing MIT license, publishing implementation, and approval workflow.
+First public release of **Publish to X**.
+
+- Publish posts and reply-chain threads to your own X account, with up to four supported images per post.
+- Preview text, character counts, attachments, and target account before approving an agent publish request.
+- Standard-library dry runs with no API requests; live mode uses tweepy and verifies the authenticated target account.
+- Upload checks and partial-thread failure reporting.
+- A real black-background Claude Code installation/preview demo that stops at the approval prompt.
+- Setup, usage, security, and troubleshooting guides; shared artwork, community files, and the existing MIT license.

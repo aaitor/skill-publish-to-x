@@ -4,6 +4,7 @@
 
 <h1 align="center">Publish to X</h1>
 <p align="center">Draft, preview, and publish posts and threads.</p>
+<p align="center"><a href="https://github.com/aaitor/skill-publish-to-x/releases/tag/v1.0">v1.0 release</a></p>
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
   <a href="docs/installation.md">Setup</a> ·
