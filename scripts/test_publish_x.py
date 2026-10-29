@@ -1,6 +1,7 @@
-"""Tests for publish_x: parsing, X length, image mapping, checks and posting (X client mocked)."""
+"""Tests for publish_x: parsing, X length, image mapping, settings, checks and posting (X client mocked)."""
 import base64
 import json
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,16 +11,41 @@ import pytest
 import requests
 import tweepy
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from publish_x import check, main, make_client, parse, publish, x_length  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from publish_x import check, load_settings, main, make_client, parse, publish, x_length  # noqa: E402
 
-FIXTURE = Path(__file__).parent / "fixtures" / "hcompany-catalog-recall-agent" / "x.md"
-HCOMPANY_IMAGES = ("use-cases.png", "hcompany-execution.png", "hcompany-agent.png", "risk-brief.png")
+THREAD = """---
+account: acme
+status: draft
+---
+
+<!-- Attach images when posting. post 1: assets/chart.png (the chart). post 2: assets/demo.png (the demo).
+post 3: assets/team.png (the team). post 4: assets/roadmap.png (the roadmap) -->
+
+1/ We shipped the new importer today. It reads your old exports (https://example.com/formats) and keeps the history.
+
+Demo: https://example.com/demo
+
+---
+
+2/ It took three rewrites. The first two were fast and wrong, the third one is boring and correct.
+
+---
+
+3/ Thanks to everyone who sent broken files. Each one is now a test.
+
+---
+
+4/ What is next: the roadmap is public.
+
+Full post: https://example.com/blog/importer?utm_source=x&utm_medium=social
+"""
+IMAGES = ("chart.png", "demo.png", "team.png", "roadmap.png")
 CREDS = {"X_CONSUMER_KEY": "k", "X_CONSUMER_KEY_SECRET": "ks",
          "X_ACCESS_TOKEN_OAUTH1": "t", "X_ACCESS_TOKEN_SECRET_OAUTH1": "ts"}
 
 
-def doc(body, account="aaitor"):
+def doc(body, account="alice"):
     return f"---\naccount: {account}\nstatus: draft\n---\n{body}"
 
 
@@ -32,11 +58,11 @@ def write_piece(tmp_path, text, assets=()):
 
 
 @pytest.fixture
-def hcompany(tmp_path):
-    return write_piece(tmp_path, FIXTURE.read_text(), HCOMPANY_IMAGES)
+def thread(tmp_path):
+    return write_piece(tmp_path, THREAD, IMAGES)
 
 
-def fake_client(username="aaitor"):
+def fake_client(username="alice"):
     # autospec: a wrong argument name to the real tweepy methods fails the test
     client = create_autospec(tweepy.Client, instance=True)
     client.get_me.return_value = SimpleNamespace(data=SimpleNamespace(username=username))
@@ -54,7 +80,7 @@ def test_plain_text_counts_characters():
 
 
 def test_link_counts_as_23_whatever_its_length():
-    long = "https://nevermined.ai/blog/x?utm_source=twitter&utm_medium=social&utm_campaign=x"
+    long = "https://example.com/blog/x?utm_source=x&utm_medium=social&utm_campaign=launch"
     assert x_length(long) == 23
     assert x_length("https://a.io") == 23
     assert x_length(f"see {long} and http://b.co") == 4 + 23 + 5 + 23
@@ -62,7 +88,7 @@ def test_link_counts_as_23_whatever_its_length():
 
 def test_trailing_punctuation_is_not_part_of_the_link():
     # X stops a link before closing punctuation, so it counts as text; swallowing it under-counts.
-    assert x_length("(https://hcompany.ai)") == 1 + 23 + 1
+    assert x_length("(https://example.com)") == 1 + 23 + 1
     assert x_length("see https://a.io/x.") == 4 + 23 + 1
     assert x_length("https://a.io/x?y=1&z=2") == 23
 
@@ -71,21 +97,24 @@ def test_280_is_allowed_and_281_is_not(tmp_path):
     ok, too_long = "a" * 280, "a" * 281
     for text, errors in ((ok, 0), (too_long, 1)):
         meta, posts, images = parse(doc(text))
-        assert len(check(tmp_path, meta, posts, images, "aaitor", False)) == errors
+        assert len(check(tmp_path, meta, posts, images, "alice", False)) == errors
 
 
 # --- parse: front matter, posts, comments ---------------------------------------------
 
 def test_front_matter_is_read():
-    meta, _, _ = parse(doc("hi", account="nevermined_ai"))
-    assert meta == {"account": "nevermined_ai", "status": "draft"}
+    meta, _, _ = parse(doc("hi", account="acme"))
+    assert meta == {"account": "acme", "status": "draft"}
 
 
-def test_missing_front_matter_is_an_error():
+def test_front_matter_is_optional():
+    assert parse("Just one post.\n") == ({}, ("Just one post.",), {})
+    assert parse("1/ first\n---\n2/ second") == ({}, ("1/ first", "2/ second"), {})
+
+
+def test_unclosed_front_matter_is_an_error():
     with pytest.raises(ValueError, match="front matter"):
-        parse("just a post")
-    with pytest.raises(ValueError, match="front matter"):
-        parse("---\naccount: aaitor\nno closing line")
+        parse("---\naccount: alice\nno closing line")
 
 
 def test_single_post_has_no_separators():
@@ -110,26 +139,22 @@ def test_html_comments_are_stripped_and_never_counted():
 def test_comment_only_body_has_no_posts(tmp_path):
     meta, posts, images = parse(doc("<!-- nothing to post -->"))
     assert posts == ()
-    assert any("no post text" in e for e in check(tmp_path, meta, posts, images, "aaitor", False))
+    assert any("no post text" in e for e in check(tmp_path, meta, posts, images, "alice", False))
 
 
 # --- image -> post mapping -------------------------------------------------------------
 
-def test_hcompany_images_map_to_their_posts():
-    _, posts, images = parse(FIXTURE.read_text())
+def test_thread_images_map_to_their_posts():
+    _, posts, images = parse(THREAD)
     assert len(posts) == 4
-    assert images == {
-        1: ("assets/use-cases.png",),
-        2: ("assets/hcompany-execution.png",),
-        3: ("assets/hcompany-agent.png",),
-        4: ("assets/risk-brief.png",),
-    }
+    assert images == {n: (f"assets/{name}",) for n, name in enumerate(IMAGES, 1)}
     assert not any("<!--" in p or "assets/" in p for p in posts)
+    assert all(x_length(p) <= 280 for p in posts)
 
 
 def test_attach_to_post_n_wording_maps():
-    text = doc("<!-- Attach image to post 1 when posting: assets/readiness-tile.png (the card) -->\nhi")
-    assert parse(text)[2] == {1: ("assets/readiness-tile.png",)}
+    text = doc("<!-- Attach image to post 1 when posting: assets/score.png (the card) -->\nhi")
+    assert parse(text)[2] == {1: ("assets/score.png",)}
 
 
 def test_several_images_on_one_post_and_case_insensitive():
@@ -162,7 +187,7 @@ def test_image_problems_are_reported(tmp_path):
         3: ("assets/ok.png",),
         0: ("assets/ok.png",),
     }
-    errors = check(tmp_path, {"account": "aaitor"}, ("a", "b"), images, "aaitor", False)
+    errors = check(tmp_path, {"account": "alice"}, ("a", "b"), images, "alice", False)
     text = "\n".join(errors)
     assert "post 1 has 5 images; X allows 4" in text
     assert "assets/missing.png is not a file" in text
@@ -175,22 +200,22 @@ def test_image_problems_are_reported(tmp_path):
 def test_gif_is_rejected_not_uploaded_as_an_image(tmp_path):
     # ponytail check: animated GIFs need media_category tweet_gif (and maybe chunked upload)
     write_piece(tmp_path, "", ("anim.GIF",))
-    errors = check(tmp_path, {}, ("a",), {1: ("assets/anim.GIF",)}, "aaitor", False)
+    errors = check(tmp_path, {}, ("a",), {1: ("assets/anim.GIF",)}, "alice", False)
     assert errors == ["assets/anim.GIF: GIFs are not supported; use PNG, JPG or WEBP"]
 
 
 # --- account guard ---------------------------------------------------------------------
 
 def test_file_account_mismatch_needs_explicit_target(tmp_path):
-    meta, posts, images = parse(doc("hi", account="nevermined_ai"))
-    errors = check(tmp_path, meta, posts, images, "aaitor", False)
-    assert errors == ["x.md is written for @nevermined_ai, not @aaitor; pass --account aaitor to confirm"]
-    assert check(tmp_path, meta, posts, images, "aaitor", True) == []
+    meta, posts, images = parse(doc("hi", account="acme"))
+    errors = check(tmp_path, meta, posts, images, "alice", False)
+    assert errors == ["the file is written for @acme, not @alice; pass --account alice to confirm"]
+    assert check(tmp_path, meta, posts, images, "alice", True) == []
 
 
 def test_matching_account_is_case_insensitive(tmp_path):
-    meta, posts, images = parse(doc("hi", account="AAitor"))
-    assert check(tmp_path, meta, posts, images, "aaitor", False) == []
+    meta, posts, images = parse(doc("hi", account="ALIce"))
+    assert check(tmp_path, meta, posts, images, "alice", False) == []
 
 
 def test_invalid_handle_is_rejected(tmp_path):
@@ -200,10 +225,10 @@ def test_invalid_handle_is_rejected(tmp_path):
 
 # --- publish: uploads first, then a reply chain ----------------------------------------
 
-def test_publish_uploads_images_then_chains_replies(hcompany):
-    _, posts, images = parse((hcompany / "x.md").read_text())
+def test_publish_uploads_images_then_chains_replies(thread):
+    _, posts, images = parse(THREAD)
     client = fake_client()
-    ids = publish(client, hcompany, posts, images, "aaitor")
+    ids = publish(client, thread, posts, images, "alice")
 
     assert ids == ["t1", "t2", "t3", "t4"]
     order = [c[0] for c in client.mock_calls]
@@ -211,11 +236,11 @@ def test_publish_uploads_images_then_chains_replies(hcompany):
 
     uploads = client.request.call_args_list
     assert len(uploads) == 4
-    for call, name in zip(uploads, HCOMPANY_IMAGES):
+    for call, name in zip(uploads, IMAGES):
         assert call.args == ("POST", "/2/media/upload")
         assert call.kwargs["user_auth"] is True
         assert call.kwargs["json"] == {
-            "media": base64.b64encode((hcompany / "assets" / name).read_bytes()).decode(),
+            "media": base64.b64encode((thread / "assets" / name).read_bytes()).decode(),
             "media_category": "tweet_image",
         }
 
@@ -228,17 +253,17 @@ def test_publish_uploads_images_then_chains_replies(hcompany):
 
 def test_publish_post_without_images_sends_no_media(tmp_path):
     client = fake_client()
-    publish(client, tmp_path, ("a", "b"), {}, "aaitor")
+    publish(client, tmp_path, ("a", "b"), {}, "alice")
     client.request.assert_not_called()
     assert client.create_tweet.call_args_list[1].kwargs["media_ids"] is None
 
 
-def test_upload_failure_posts_nothing(hcompany):
-    _, posts, images = parse((hcompany / "x.md").read_text())
+def test_upload_failure_posts_nothing(thread):
+    _, posts, images = parse(THREAD)
     client = fake_client()
     client.request.side_effect = tweepy.TweepyException("boom")
     with pytest.raises(RuntimeError, match="nothing was posted"):
-        publish(client, hcompany, posts, images, "aaitor")
+        publish(client, thread, posts, images, "alice")
     client.create_tweet.assert_not_called()
 
 
@@ -248,25 +273,64 @@ def test_failure_mid_thread_reports_what_is_live(tmp_path):
         SimpleNamespace(data={"id": "t1"}), SimpleNamespace(data={"id": "t2"}), tweepy.TweepyException("429"),
     ]
     with pytest.raises(RuntimeError) as err:
-        publish(client, tmp_path, ("a", "b", "c", "d"), {}, "aaitor")
+        publish(client, tmp_path, ("a", "b", "c", "d"), {}, "alice")
     msg = str(err.value)
     assert "post 3 of 4 failed" in msg
-    assert "https://x.com/aaitor/status/t1" in msg and "https://x.com/aaitor/status/t2" in msg
+    assert "https://x.com/alice/status/t1" in msg and "https://x.com/alice/status/t2" in msg
 
 
 def test_response_without_an_id_still_reports_what_is_live(tmp_path):
     client = fake_client()
     client.create_tweet.side_effect = [SimpleNamespace(data={"id": "t1"}), SimpleNamespace(data=None)]
     with pytest.raises(RuntimeError) as err:
-        publish(client, tmp_path, ("a", "b", "c"), {}, "aaitor")
+        publish(client, tmp_path, ("a", "b", "c"), {}, "alice")
     msg = str(err.value)
-    assert "post 2 of 3 failed" in msg and "https://x.com/aaitor/status/t1" in msg
-    assert "check https://x.com/aaitor" in msg
+    assert "post 2 of 3 failed" in msg and "https://x.com/alice/status/t1" in msg
+    assert "check https://x.com/alice" in msg
+
+
+# --- settings: credentials file + environment -------------------------------------------
+
+def test_settings_file_is_parsed(tmp_path):
+    path = tmp_path / "credentials.env"
+    path.write_text('# X app\nexport X_CONSUMER_KEY="k"\nX_CONSUMER_KEY_SECRET=\'ks\'\n\n'
+                    "X_ACCOUNT = alice\nNOT_A_LINE\nLINKEDIN_CLIENT_ID=other\n")
+    path.chmod(0o600)
+    assert load_settings(path, {}) == {"X_CONSUMER_KEY": "k", "X_CONSUMER_KEY_SECRET": "ks", "X_ACCOUNT": "alice"}
+
+
+def test_environment_wins_over_the_file(tmp_path):
+    path = tmp_path / "credentials.env"
+    path.write_text("X_CONSUMER_KEY=from-file\nX_ACCOUNT=alice\n")
+    path.chmod(0o600)
+    env = {"X_CONSUMER_KEY": "from-env", "X_ACCOUNT": "", "HOME": "/home/x"}
+    assert load_settings(path, env) == {"X_CONSUMER_KEY": "from-env", "X_ACCOUNT": "alice"}
+
+
+def test_missing_settings_file_uses_the_environment(tmp_path):
+    assert load_settings(tmp_path / "nope.env", {"X_ACCOUNT": "alice"}) == {"X_ACCOUNT": "alice"}
+
+
+def test_settings_file_readable_by_others_warns(tmp_path, capsys):
+    path = tmp_path / "credentials.env"
+    path.write_text("X_ACCOUNT=alice\n")
+    path.chmod(0o644)
+    load_settings(path, {})
+    assert f"chmod 600 {path}" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
+def test_private_settings_file_does_not_warn(tmp_path, capsys):
+    path = tmp_path / "credentials.env"
+    path.write_text("X_ACCOUNT=alice\n")
+    path.chmod(0o600)
+    load_settings(path, {})
+    assert capsys.readouterr().err == ""
 
 
 # --- credentials -----------------------------------------------------------------------
 
-def test_missing_env_vars_are_named_not_valued():
+def test_missing_credentials_are_named_not_valued():
     with pytest.raises(ValueError) as err:
         make_client({"X_CONSUMER_KEY": "secret-value"})
     msg = str(err.value)
@@ -275,15 +339,15 @@ def test_missing_env_vars_are_named_not_valued():
 
 
 def test_oauth2_access_token_is_never_used_for_oauth1():
-    # X_ACCESS_TOKEN is the OAuth 2.0 token in the credentials file; signing with it would 401.
-    env = {**CREDS, "X_ACCESS_TOKEN": "oauth2"}
-    del env["X_ACCESS_TOKEN_OAUTH1"]
+    # X_ACCESS_TOKEN is an OAuth 2.0 token name; signing an OAuth 1.0a request with it would 401.
+    settings = {**CREDS, "X_ACCESS_TOKEN": "oauth2"}
+    del settings["X_ACCESS_TOKEN_OAUTH1"]
     with pytest.raises(ValueError, match="X_ACCESS_TOKEN_OAUTH1"):
-        make_client(env)
+        make_client(settings)
 
 
-def test_client_is_built_from_env():
-    # Both tokens set, as in the shared credentials file: the OAuth 1.0a one must win.
+def test_client_is_built_from_settings():
+    # Both tokens set, as in a shared credentials file: the OAuth 1.0a one must win.
     with patch("tweepy.Client") as client_cls:
         make_client({**CREDS, "X_ACCESS_TOKEN": "oauth2"})
     client_cls.assert_called_once_with(
@@ -291,75 +355,88 @@ def test_client_is_built_from_env():
     )
 
 
+# --- main: target account ----------------------------------------------------------------
+
+def test_x_account_setting_is_the_default_target(tmp_path, capsys):
+    write_piece(tmp_path, "hi")
+    assert main([str(tmp_path)], settings={"X_ACCOUNT": "@alice"}) == 0
+    assert "-> @alice" in capsys.readouterr().out
+
+
+def test_file_written_for_another_account_needs_explicit_target(thread, capsys):
+    factory = Mock()
+    assert main([str(thread)], settings={"X_ACCOUNT": "alice"}, client_factory=factory) == 1
+    assert "pass --account alice to confirm" in capsys.readouterr().err
+    factory.assert_not_called()
+
+
+def test_without_a_setting_the_file_account_is_the_target(thread, capsys):
+    assert main([str(thread)], settings={}) == 0
+    assert "-> @acme" in capsys.readouterr().out
+
+
+def test_no_account_anywhere_is_an_error(tmp_path, capsys):
+    write_piece(tmp_path, "hi")
+    assert main([str(tmp_path)], settings={}) == 1
+    assert "pass --account <handle> or set X_ACCOUNT" in capsys.readouterr().err
+
+
 # --- main: dry run by default, --live opt-in -------------------------------------------
 
-def test_hcompany_dry_run_needs_explicit_account(hcompany, capsys):
+def test_dry_run_prints_the_thread_and_calls_nothing(thread, capsys):
     factory = Mock()
-    assert main([str(hcompany)], client_factory=factory) == 1
-    assert "pass --account aaitor to confirm" in capsys.readouterr().err
-    factory.assert_not_called()
-
-
-def test_hcompany_dry_run_prints_the_thread_and_calls_nothing(hcompany, capsys):
-    factory = Mock()
-    assert main([str(hcompany), "--account", "@aaitor"], client_factory=factory) == 0
+    assert main([str(thread), "--account", "@alice"], settings={}, client_factory=factory) == 0
     out = capsys.readouterr().out
     factory.assert_not_called()
-    for n, name in enumerate(HCOMPANY_IMAGES, 1):
+    for n, name in enumerate(IMAGES, 1):
         assert f"post {n}/4" in out and f"assets/{name}" in out
-    assert "https://nevermined.ai/blog/hcompany-catalog-recall-agent" in out
-    assert "Dry run: nothing posted" in out and "@aaitor" in out
+    assert "https://example.com/blog/importer" in out
+    assert "Dry run: nothing posted" in out and "@alice" in out
 
 
-def test_hcompany_posts_fit_280():
-    _, posts, _ = parse(FIXTURE.read_text())
-    assert all(x_length(p) <= 280 for p in posts)
-
-
-def test_main_accepts_the_file_path_too(hcompany):
-    assert main([str(hcompany / "x.md"), "--account", "aaitor"], client_factory=Mock()) == 0
+def test_main_accepts_any_file_path(tmp_path):
+    (tmp_path / "post.txt").write_text("A single post, no front matter.")
+    assert main([str(tmp_path / "post.txt"), "--account", "alice"], settings={}, client_factory=Mock()) == 0
 
 
 def test_main_missing_file(tmp_path, capsys):
-    assert main([str(tmp_path)]) == 1
+    assert main([str(tmp_path)], settings={}) == 1
     assert "x.md" in capsys.readouterr().err
 
 
 def test_live_with_problems_never_builds_a_client(tmp_path):
     write_piece(tmp_path, doc("a" * 300))
     factory = Mock()
-    assert main([str(tmp_path), "--live"], client_factory=factory) == 1
+    assert main([str(tmp_path), "--live"], settings={}, client_factory=factory) == 1
     factory.assert_not_called()
 
 
-def test_live_posts_after_checking_the_account(hcompany, capsys):
+def test_live_posts_after_checking_the_account(thread, capsys):
     client = fake_client()
-    assert main([str(hcompany), "--account", "aaitor", "--live"], client_factory=lambda: client) == 0
+    assert main([str(thread), "--account", "alice", "--live"], settings={}, client_factory=lambda: client) == 0
     assert client.mock_calls[0][0] == "get_me"
     assert client.create_tweet.call_count == 4
-    assert "https://x.com/aaitor/status/t4" in capsys.readouterr().out
+    assert "https://x.com/alice/status/t4" in capsys.readouterr().out
 
 
-def test_live_refuses_credentials_for_another_account(hcompany, capsys):
-    client = fake_client(username="nevermined_ai")
-    assert main([str(hcompany), "--account", "aaitor", "--live"], client_factory=lambda: client) == 1
-    assert "credentials are for @nevermined_ai" in capsys.readouterr().err
+def test_live_refuses_credentials_for_another_account(thread, capsys):
+    client = fake_client(username="acme")
+    assert main([str(thread), "--account", "alice", "--live"], settings={}, client_factory=lambda: client) == 1
+    assert "credentials are for @acme" in capsys.readouterr().err
     client.request.assert_not_called()
     client.create_tweet.assert_not_called()
 
 
-def test_live_reports_missing_credentials(hcompany, capsys, monkeypatch):
-    for name in CREDS:
-        monkeypatch.delenv(name, raising=False)
-    assert main([str(hcompany), "--account", "aaitor", "--live"]) == 1
+def test_live_reports_missing_credentials(thread, capsys):
+    assert main([str(thread), "--account", "alice", "--live"], settings={}) == 1
     err = capsys.readouterr().err
     assert "X_CONSUMER_KEY" in err and "nothing was posted" in err
 
 
-def test_live_rejected_credentials_post_nothing(hcompany, capsys):
+def test_live_rejected_credentials_post_nothing(thread, capsys):
     client = fake_client()
     client.get_me.side_effect = tweepy.TweepyException("401 Unauthorized")
-    assert main([str(hcompany), "--account", "aaitor", "--live"], client_factory=lambda: client) == 1
+    assert main([str(thread), "--account", "alice", "--live"], settings={}, client_factory=lambda: client) == 1
     assert "401 Unauthorized\nnothing was posted" in capsys.readouterr().err
     client.request.assert_not_called()
     client.create_tweet.assert_not_called()
@@ -369,26 +446,26 @@ def test_live_reports_a_failed_post(tmp_path, capsys):
     write_piece(tmp_path, doc("a\n---\nb"))
     client = fake_client()
     client.create_tweet.side_effect = [SimpleNamespace(data={"id": "t1"}), tweepy.TweepyException("x")]
-    assert main([str(tmp_path), "--live"], client_factory=lambda: client) == 1
+    assert main([str(tmp_path), "--live"], settings={}, client_factory=lambda: client) == 1
     assert "post 2 of 2 failed" in capsys.readouterr().err
 
 
 # --- wire format: real tweepy + OAuth 1.0a signing, only the HTTP transport faked -------
 
-def test_live_wire_requests(hcompany):
+def test_live_wire_requests(thread):
     sent = []
 
     def send(adapter, request, **kwargs):
         sent.append(request)
         path = request.path_url
-        body = {"id": "1", "name": "A", "username": "aaitor"} if path == "/2/users/me" else {
+        body = {"id": "1", "name": "A", "username": "alice"} if path == "/2/users/me" else {
             "id": f"{'m' if 'media' in path else 't'}{len(sent)}", "text": "x"}
         response = requests.Response()
         response.status_code, response._content, response.request = 200, json.dumps({"data": body}).encode(), request
         return response
 
     with patch.object(requests.adapters.HTTPAdapter, "send", send):
-        assert main([str(hcompany), "--account", "aaitor", "--live"], client_factory=lambda: make_client(CREDS)) == 0
+        assert main([str(thread), "--account", "alice", "--live"], settings=CREDS) == 0
 
     assert [(r.method, r.path_url) for r in sent] == (
         [("GET", "/2/users/me")] + [("POST", "/2/media/upload")] * 4 + [("POST", "/2/tweets")] * 4)
@@ -397,9 +474,9 @@ def test_live_wire_requests(hcompany):
                and 'oauth_token="t"' in r.headers["Authorization"] for r in sent)
     upload = json.loads(sent[1].body)
     assert upload["media_category"] == "tweet_image"
-    assert base64.b64decode(upload["media"]) == (hcompany / "assets" / "use-cases.png").read_bytes()
+    assert base64.b64decode(upload["media"]) == (thread / "assets" / "chart.png").read_bytes()
     tweets = [json.loads(r.body) for r in sent[5:]]
-    assert tweets[0] == {"text": parse(FIXTURE.read_text())[1][0], "media": {"media_ids": ["m2"]}}
+    assert tweets[0] == {"text": parse(THREAD)[1][0], "media": {"media_ids": ["m2"]}}
     assert tweets[1]["reply"] == {"in_reply_to_tweet_id": "t6"}
     assert tweets[1]["media"] == {"media_ids": ["m3"]}
     assert tweets[3]["reply"] == {"in_reply_to_tweet_id": "t8"}
