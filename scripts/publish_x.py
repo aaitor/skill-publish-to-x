@@ -3,15 +3,15 @@
 # requires-python = ">=3.10"
 # dependencies = ["tweepy==4.17.0"]
 # ///
-"""Publish an X thread from a Nevermined content x.md to a personal account.
+"""Publish a post or a thread, with images, to your own X account via the X API v2.
 
 Dry run by default: prints each post, its X length and its images, and checks the
 280-character limit (a link counts as 23), the image mapping and the target account,
 without calling X. --live uploads the images (POST /2/media/upload), then posts the
-thread as a reply chain (POST /2/tweets), signed with OAuth 1.0a user credentials
-read from the environment.
+thread as a reply chain (POST /2/tweets), signed with your OAuth 1.0a user credentials
+from ~/.config/x-publisher/credentials.env or the environment.
 
-Run: `uv run publish_x.py <folder|x.md> [--account <handle>] [--live]`.
+Run: `uv run scripts/publish_x.py <folder|file> [--account <handle>] [--live]`.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Callable
 if TYPE_CHECKING:
     import tweepy
 
-DEFAULT_ACCOUNT = "aaitor"
+CREDENTIALS_FILE = Path.home() / ".config" / "x-publisher" / "credentials.env"
 X_MAX = 280
 X_URL_LEN = 23  # X counts every link as 23 characters
 MAX_IMAGES = 4
@@ -42,12 +42,14 @@ URL = re.compile(r"""https?://\S*[^\s.,;:!?)\]}'"]""")
 POST_REF = re.compile(r"\bpost\s+(\d+)", re.I)
 IMAGE = re.compile(r"[\w./-]+\.(?:png|jpe?g|gif|webp)\b", re.I)
 HANDLE = re.compile(r"[A-Za-z0-9_]{1,15}")
+# A front matter line: lowercase key, then a colon that does not start a link ("https://").
+META_LINE = re.compile(r"\s*[a-z_][a-z0-9_]*\s*:(?!//)")
 
 Images = dict[int, tuple[str, ...]]
 
 
 def x_length(text: str) -> int:
-    # ponytail: plain len, as the gtm content check counts; X weighs emoji/CJK as 2,
+    # ponytail: plain len, links as 23; X weighs emoji/CJK as 2,
     # switch to twitter-text weighting if a thread ever uses them.
     return len(URL.sub("x" * X_URL_LEN, text))
 
@@ -64,18 +66,33 @@ def _comment_images(comment: str) -> Images:
     return found
 
 
-def parse(text: str) -> tuple[dict[str, str], tuple[str, ...], Images]:
-    """x.md text -> (front matter, posts, {post number: image paths})."""
-    lines = text.split("\n")
+def _front_matter_end(lines: list[str]) -> int | None:
+    """Index of the --- closing the front matter, or None when the file does not start with ---.
+
+    A leading --- always opens front matter, never a post: guessing which it is dropped posts.
+    """
+    if lines[0].strip() != "---":
+        return None
     end = next((i for i, line in enumerate(lines[1:], 1) if line.strip() == "---"), None)
-    if lines[0].strip() != "---" or end is None:
-        raise ValueError("no front matter (a block between two --- lines at the top)")
+    if end is None:
+        raise ValueError("front matter is not closed: add a --- line after it, or remove the leading --- if it is a post")
+    head = (line.strip() for line in lines[1:end] if line.strip() and not line.lstrip().startswith("#"))
+    if bad := next((line for line in head if not META_LINE.match(line)), None):
+        raise ValueError(f"front matter line {bad[:40]!r} is not 'key: value' (if it is a post, remove the leading ---)")
+    return end
+
+
+def parse(text: str) -> tuple[dict[str, str], tuple[str, ...], Images]:
+    """File text -> (front matter, posts, {post number: image paths}). Front matter is optional."""
+    lines = text.split("\n")
+    end = _front_matter_end(lines)
+    head, body = ([], text) if end is None else (lines[1:end], "\n".join(lines[end + 1:]))
+    head = [line for line in head if not line.lstrip().startswith("#")]
     meta = {
         key.strip(): val.strip().strip("\"'")
-        for key, sep, val in (line.partition(":") for line in lines[1:end])
+        for key, sep, val in (line.partition(":") for line in head)
         if sep
     }
-    body = "\n".join(lines[end + 1:])
     images: Images = {}
     for comment in COMMENT.findall(body):
         for n, paths in _comment_images(comment).items():
@@ -110,7 +127,7 @@ def check(folder: Path, meta: Mapping[str, str], posts: tuple[str, ...], images:
     errors = []
     written_for = meta.get("account", "").lstrip("@")
     if written_for and written_for.lower() != account.lower() and not explicit:
-        errors.append(f"x.md is written for @{written_for}, not @{account}; pass --account {account} to confirm")
+        errors.append(f"the file is written for @{written_for}, not @{account}; pass --account {account} to confirm")
     if not posts:
         errors.append("no post text")
     for n, post in enumerate(posts, 1):
@@ -161,18 +178,41 @@ def publish(client: tweepy.Client, folder: Path, posts: tuple[str, ...], images:
     return ids
 
 
-def make_client(env: Mapping[str, str] = os.environ) -> tweepy.Client:
-    """A tweepy client signed with the OAuth 1.0a user credentials in the environment."""
-    if missing := [name for name in ENV_VARS if not env.get(name)]:
-        raise ValueError(f"missing environment variables: {', '.join(missing)} (see README.md)")
+def _env_value(val: str) -> str:
+    """A value as a shell would read it: quoted text kept whole, else a trailing ' # comment' dropped."""
+    quote = val[:1]
+    if quote in ("'", '"'):
+        return val[1:].split(quote, 1)[0]  # an unclosed quote runs to the end of the line
+    return re.sub(r"\s+#.*", "", val)
+
+
+def load_settings(path: Path = CREDENTIALS_FILE, environ: Mapping[str, str] = os.environ) -> dict[str, str]:
+    """X_* settings from KEY=VALUE lines in the credentials file; non-empty environment variables win."""
+    found = {}
+    if path.is_file():
+        if os.name == "posix" and path.stat().st_mode & 0o077:
+            print(f"Warning: {path} is readable by other users, run: chmod 600 {path}", file=sys.stderr)
+        for line in path.read_text(encoding="utf-8").splitlines():
+            key, sep, val = line.strip().removeprefix("export ").partition("=")
+            if sep and key.strip().startswith("X_"):
+                found[key.strip()] = _env_value(val.strip())
+    return {**found, **{k: v for k, v in environ.items() if k.startswith("X_") and v}}
+
+
+def make_client(settings: Mapping[str, str]) -> tweepy.Client:
+    """A tweepy client signed with the OAuth 1.0a user credentials in the settings."""
+    if missing := [name for name in ENV_VARS if not settings.get(name)]:
+        raise ValueError(f"missing credentials: {', '.join(missing)} (see README.md, Configuration)")
     import tweepy  # only --live needs it; a dry run is stdlib-only
 
-    key, secret, token, token_secret = (env[name] for name in ENV_VARS)
+    key, secret, token, token_secret = (settings[name] for name in ENV_VARS)
     return tweepy.Client(consumer_key=key, consumer_secret=secret, access_token=token, access_token_secret=token_secret)
 
 
 def _show(file: Path, meta: Mapping[str, str], posts: tuple[str, ...], images: Images, account: str) -> None:
-    print(f"{file} (written for @{meta.get('account', '?')}, status {meta.get('status', '?')}) -> @{account}")
+    print(f"{file} -> @{account}")
+    if meta:
+        print("front matter: " + ", ".join(f"{key}: {val}" for key, val in meta.items()))
     for n, post in enumerate(posts, 1):
         attach = ", ".join(images.get(n, ())) or "none"
         print(f"\npost {n}/{len(posts)} · {x_length(post)}/{X_MAX} chars · images: {attach}\n{post}")
@@ -184,29 +224,38 @@ def _fail(message: str) -> int:
     return 1
 
 
-def main(argv: list[str], client_factory: Callable[[], tweepy.Client] = make_client) -> int:
-    ap = argparse.ArgumentParser(prog="publish_x", description="Publish an X thread from a content x.md.")
-    ap.add_argument("path", type=Path, help="the content folder, or its x.md / x-<name>.md")
-    ap.add_argument("--account", help=f"X handle to post to (default {DEFAULT_ACCOUNT}); "
-                                      "required when x.md is written for another account")
+def main(argv: list[str], settings: Mapping[str, str] | None = None,
+         client_factory: Callable[[], tweepy.Client] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="publish_x", description="Publish a post or thread to your X account.")
+    ap.add_argument("path", type=Path, help="a folder holding x.md, or any post file")
+    ap.add_argument("--account", help="X handle to post to (default: X_ACCOUNT, else the file's account:); "
+                                      "required when the file is written for another account")
     ap.add_argument("--live", action="store_true", help="post for real; without it nothing is sent to X")
     args = ap.parse_args(argv)
+    if settings is None:
+        try:
+            settings = load_settings()
+        except (OSError, ValueError) as e:  # ValueError covers a file that is not UTF-8
+            return _fail(f"cannot read {CREDENTIALS_FILE}: {e}")
     file = args.path / "x.md" if args.path.is_dir() else args.path
-    account = (args.account or DEFAULT_ACCOUNT).lstrip("@")
 
     try:
         meta, posts, images = parse(file.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         return _fail(f"{file}: {e}")
+    flag = (args.account or "").lstrip("@")  # an empty --account confirms nothing
+    account = (flag or settings.get("X_ACCOUNT") or meta.get("account") or "").lstrip("@")
+    if not account:
+        return _fail("no account to post to: pass --account <handle> or set X_ACCOUNT (see README.md)")
     _show(file, meta, posts, images, account)
-    if errors := check(file.parent, meta, posts, images, account, args.account is not None):
+    if errors := check(file.parent, meta, posts, images, account, bool(flag)):
         return _fail("\n".join(errors))
     if not args.live:
         print(f"\nDry run: nothing posted. Re-run with --live to post this thread to @{account}.")
         return 0
 
     try:
-        client = client_factory()
+        client = client_factory() if client_factory else make_client(settings)
         me = client.get_me(user_auth=True).data.username
     except Exception as e:
         return _fail(f"{e}\nnothing was posted")

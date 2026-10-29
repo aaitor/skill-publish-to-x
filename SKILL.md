@@ -1,54 +1,63 @@
 ---
 name: publish-to-x
-description: Use when asked to publish, post or tweet an X (Twitter) thread from a Nevermined content `x.md` (gtm repo, `content/<date>-<slug>/x.md`) to Aitor's personal X account (@aaitor), or to preview/check such a thread before posting. Dry run by default; posts live only with `--live` after Aitor's explicit go-ahead. Invoke as `/publish-to-x <content-folder|x.md> [--account <handle>] [--live]`.
+description: Use when the user asks to publish, post or tweet on their own X (Twitter) account, a single post or a thread, with or without images, or to preview a post or thread before publishing it.
 ---
 
 # Publish to X
 
-Post a thread from a content `x.md` to a personal X account through the X API v2:
-images first (`POST /2/media/upload`), then each post as a reply to the previous one
-(`POST /2/tweets`). The script is `publish_x.py` in this skill's folder.
+Publishes a post or a thread to the user's **own X account** through the X API v2: images first (`POST /2/media/upload`), then each post as a reply to the previous one (`POST /2/tweets`), signed with the user's OAuth 1.0a credentials. A dry run needs only the Python standard library; `--live` needs `tweepy`, which `uv run` installs from the script header.
 
-## Input
+`<skill-dir>` is the directory that contains this `SKILL.md`.
 
-`/publish-to-x <path> [--account <handle>] [--live]`
+```bash
+X="uv run <skill-dir>/scripts/publish_x.py"   # or python3, with tweepy installed
+$X <folder|file>                     # dry run: every post, its length and its images; publishes nothing
+$X <folder|file> --account <handle>  # handle to post to (default: X_ACCOUNT, else the file's account:)
+$X <folder|file> --live              # publish
+```
 
-- `<path>`: a content folder (its `x.md` is used) or a specific `x.md` / `x-<name>.md`.
-  Given only a slug, find `content/*-<slug>/` in the gtm checkout.
-- `--account`: the handle to post to, without `@`. Default `aaitor`. Required when the
-  file's `account:` names another handle (gtm files usually say `nevermined_ai`).
-- `--live`: post for real. Without it nothing is sent to X.
+## The post file
 
-The `x.md` format (authority: gtm `content/README.md`): front matter with `account` and
-`status`; posts separated by a line holding only `---`; each post at most 280 characters,
-a link counting as 23. HTML comments are never posted or counted. Images are declared in a
-comment, e.g. `<!-- post 1: assets/a.png (...). post 2: assets/b.png (...) -->`, and live
-in the `assets/` folder beside the file.
+A folder holding `x.md`, or any text file:
 
-## Steps
+```markdown
+---
+account: theirhandle
+---
 
-1. **Dry run.** `uv run <this-skill-dir>/publish_x.py <path> [--account <handle>]`
-   (stdlib only, so `python3 -I <this-skill-dir>/publish_x.py ...` also works). It prints
-   each post with its length and images, and exits 1 with every problem found.
-2. **Problems.** Report them; never edit the `x.md` (content changes go through the gtm
-   PR process). On "x.md is written for @nevermined_ai, not @aaitor", ask whether this
-   thread should go to @aaitor; pass `--account aaitor` only after a yes.
-3. **Go-ahead.** Show Aitor the dry-run output and ask: "Post this thread live to
-   @<account>?" Wait for an explicit yes for this thread. A yes for one thread, or for an
-   earlier run, does not carry over.
-4. **Live.** Re-run the same command with `--live`. It needs `X_CONSUMER_KEY`,
-   `X_CONSUMER_KEY_SECRET`, `X_ACCESS_TOKEN_OAUTH1` and `X_ACCESS_TOKEN_SECRET_OAUTH1` in the
-   environment: load Aitor's credentials file in the same command with
-   `set -a; . <file>; set +a; uv run ...` (see `README.md`). Its path is not in this
-   public repo; ask Aitor if you don't know it. It
-   checks the credentials belong to `--account`, uploads all images, then posts. Report
-   the post URLs it prints.
-5. **Failure.** If it fails before any post, nothing is live: fix and re-run after
-   asking. If it fails mid-thread, the error lists the posts already live. Do not re-run:
-   that would post the thread twice. Ask Aitor whether to delete them or finish by hand.
+<!-- post 1: assets/chart.png (the chart). post 2: assets/demo.png (the demo) -->
 
-## Hard rules
+1/ First post. A link counts as 23 characters: https://example.com
 
-- Never pass `--live` without Aitor's explicit go-ahead for that thread.
-- Credentials come from the environment only. Never print, log, write or commit them.
-- Never post to an account other than the one Aitor named.
+---
+
+2/ Second post, published as a reply to the first.
+```
+
+- Front matter is optional. A file that starts with `---` always opens it, so never put `---` before the first post. `account` is the handle the text was written for.
+- Posts are separated by a line holding only `---`; a single post has none. Each post is at most 280 characters, a link counting as 23.
+- HTML comments are never posted or counted. Declare images in one as `post N: <path>`, relative to the file and inside its folder: PNG, JPG or WEBP, 5 MB and 4 per post at most.
+
+## Workflow
+
+1. **Draft:** if the user has a writing-voice or style skill, draft with it. Otherwise keep their wording. Write the file to a temporary folder and copy any image into `assets/` beside it. If an image pasted into the chat comes with a local path, copy that file; if not, ask for the file.
+2. **Preview:** run the dry run and show the user every post, its length and its images. Fix what it reports (a post over 280, a missing image) and preview again. On "the file is written for @a, not @b", ask which account to use, and pass `--account` only after the user confirms.
+3. **Approval gate:** publish only after the user explicitly approves *this exact text* for *this account* in the conversation. If the text changes after approval, preview and ask again.
+4. **Publish:** rerun with `--live`. It checks that the credentials belong to the target account, uploads every image, then posts. Give the user the post URLs it prints.
+5. **Failure:** if it fails before the first post, nothing is live. If it fails mid-thread, the error lists the posts already live: never rerun it, since that posts the thread twice. Ask the user whether to delete those posts or finish by hand.
+
+Setup errors:
+
+- `missing credentials: ...`: the one-time setup is not done. Walk the user through `<skill-dir>/README.md`, sections "Create an X app" and "Configuration". Never ask the user to paste a key or token into the chat.
+- `no account to post to`: pass `--account <handle>` or have the user set `X_ACCOUNT`.
+- `the X credentials are for @a, not @b`: the keys belong to another account. Stop and tell the user.
+- `401 Unauthorized`: wrong or revoked keys. `403 Forbidden` on posting: the access token is read-only (README, Troubleshooting).
+- Cannot reach X or install `tweepy`: the sandbox blocks the network. Request approval to run with network access.
+
+## Notes
+
+- **Credentials:** the script reads them itself. Never read, print, copy or commit the credentials file or any `X_*` value, and never ask the user to paste one into the chat.
+- **Cost:** X bills each request (pay-per-use credits). A post with a link costs much more than one without. Check prices in the README.
+- **Threads:** number posts (`1/`, `2/`) if the user wants; the script does not add numbering.
+- **Length:** X weighs emoji and CJK characters as 2; the counter counts them as 1, so keep a margin when a post uses them.
+- **Not supported:** video, GIF, polls, quote posts, editing, deleting and scheduling. For scheduled runs, publish only text the user approved word for word.
