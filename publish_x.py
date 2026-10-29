@@ -32,7 +32,8 @@ X_MAX = 280
 X_URL_LEN = 23  # X counts every link as 23 characters
 MAX_IMAGES = 4
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
-ENV_VARS = ("X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_TOKEN_SECRET")
+# OAuth 1.0a only; the _OAUTH1 suffix keeps them apart from an OAuth 2.0 X_ACCESS_TOKEN.
+ENV_VARS = ("X_CONSUMER_KEY", "X_CONSUMER_KEY_SECRET", "X_ACCESS_TOKEN_OAUTH1", "X_ACCESS_TOKEN_SECRET_OAUTH1")
 
 COMMENT = re.compile(r"<!--(.*?)-->", re.S)
 SEPARATOR = re.compile(r"(?m)^---\s*$")

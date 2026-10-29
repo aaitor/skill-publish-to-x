@@ -36,8 +36,11 @@ in the `assets/` folder beside the file.
 3. **Go-ahead.** Show Aitor the dry-run output and ask: "Post this thread live to
    @<account>?" Wait for an explicit yes for this thread. A yes for one thread, or for an
    earlier run, does not carry over.
-4. **Live.** Re-run the same command with `--live`. It needs `X_API_KEY`, `X_API_SECRET`,
-   `X_ACCESS_TOKEN` and `X_ACCESS_TOKEN_SECRET` in the environment (see `README.md`). It
+4. **Live.** Re-run the same command with `--live`. It needs `X_CONSUMER_KEY`,
+   `X_CONSUMER_KEY_SECRET`, `X_ACCESS_TOKEN_OAUTH1` and `X_ACCESS_TOKEN_SECRET_OAUTH1` in the
+   environment: load Aitor's credentials file in the same command with
+   `set -a; . <file>; set +a; uv run ...` (see `README.md`). Its path is not in this
+   public repo; ask Aitor if you don't know it. It
    checks the credentials belong to `--account`, uploads all images, then posts. Report
    the post URLs it prints.
 5. **Failure.** If it fails before any post, nothing is live: fix and re-run after

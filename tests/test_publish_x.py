@@ -15,7 +15,8 @@ from publish_x import check, main, make_client, parse, publish, x_length  # noqa
 
 FIXTURE = Path(__file__).parent / "fixtures" / "hcompany-catalog-recall-agent" / "x.md"
 HCOMPANY_IMAGES = ("use-cases.png", "hcompany-execution.png", "hcompany-agent.png", "risk-brief.png")
-CREDS = {"X_API_KEY": "k", "X_API_SECRET": "ks", "X_ACCESS_TOKEN": "t", "X_ACCESS_TOKEN_SECRET": "ts"}
+CREDS = {"X_CONSUMER_KEY": "k", "X_CONSUMER_KEY_SECRET": "ks",
+         "X_ACCESS_TOKEN_OAUTH1": "t", "X_ACCESS_TOKEN_SECRET_OAUTH1": "ts"}
 
 
 def doc(body, account="aaitor"):
@@ -267,10 +268,18 @@ def test_response_without_an_id_still_reports_what_is_live(tmp_path):
 
 def test_missing_env_vars_are_named_not_valued():
     with pytest.raises(ValueError) as err:
-        make_client({"X_API_KEY": "secret-value"})
+        make_client({"X_CONSUMER_KEY": "secret-value"})
     msg = str(err.value)
-    assert "X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET" in msg
+    assert "X_CONSUMER_KEY_SECRET, X_ACCESS_TOKEN_OAUTH1, X_ACCESS_TOKEN_SECRET_OAUTH1" in msg
     assert "secret-value" not in msg
+
+
+def test_oauth2_access_token_is_never_used_for_oauth1():
+    # X_ACCESS_TOKEN is the OAuth 2.0 token in the credentials file; signing with it would 401.
+    env = {**CREDS, "X_ACCESS_TOKEN": "oauth2"}
+    del env["X_ACCESS_TOKEN_OAUTH1"]
+    with pytest.raises(ValueError, match="X_ACCESS_TOKEN_OAUTH1"):
+        make_client(env)
 
 
 def test_client_is_built_from_env():
@@ -343,7 +352,7 @@ def test_live_reports_missing_credentials(hcompany, capsys, monkeypatch):
         monkeypatch.delenv(name, raising=False)
     assert main([str(hcompany), "--account", "aaitor", "--live"]) == 1
     err = capsys.readouterr().err
-    assert "X_API_KEY" in err and "nothing was posted" in err
+    assert "X_CONSUMER_KEY" in err and "nothing was posted" in err
 
 
 def test_live_rejected_credentials_post_nothing(hcompany, capsys):

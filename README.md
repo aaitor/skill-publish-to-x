@@ -40,13 +40,16 @@ else is read, and they are never printed or written.
 
 | Variable | X developer portal name |
 |---|---|
-| `X_API_KEY` | API Key (consumer key) |
-| `X_API_SECRET` | API Key Secret (consumer secret) |
-| `X_ACCESS_TOKEN` | Access Token, for @aaitor |
-| `X_ACCESS_TOKEN_SECRET` | Access Token Secret, for @aaitor |
+| `X_CONSUMER_KEY` | API Key (consumer key) |
+| `X_CONSUMER_KEY_SECRET` | API Key Secret (consumer secret) |
+| `X_ACCESS_TOKEN_OAUTH1` | Access Token, for @aaitor |
+| `X_ACCESS_TOKEN_SECRET_OAUTH1` | Access Token Secret, for @aaitor |
 
-Keep them out of this repo, for example in `~/.config/publish-to-x/env` (`chmod 600`),
-loaded with `set -a; . ~/.config/publish-to-x/env; set +a`. Before posting, the script
+Other X values, such as the OAuth 2.0 `X_ACCESS_TOKEN`, `X_REFRESH_TOKEN`, `X_CLIENT_ID`
+or `X_BEARER_TOKEN`, are ignored, so they can share the same file.
+
+Keep them out of this repo in an env file (`chmod 600`, plain `NAME=value` lines), loaded
+with `set -a; . <file>; set +a` so the values reach the script. Before posting, the script
 checks that the credentials belong to the `--account` handle, and stops if they do not.
 
 ## X API prerequisites
