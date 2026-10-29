@@ -42,9 +42,9 @@ URL = re.compile(r"""https?://\S*[^\s.,;:!?)\]}'"]""")
 POST_REF = re.compile(r"\bpost\s+(\d+)", re.I)
 IMAGE = re.compile(r"[\w./-]+\.(?:png|jpe?g|gif|webp)\b", re.I)
 HANDLE = re.compile(r"[A-Za-z0-9_]{1,15}")
-# A YAML-style "key: value" line: lowercase key, colon then a space or the end (never "https://").
+# A "key: value" line: lowercase key, then a colon that does not start a link ("https://").
 # ponytail: a one-line post like "note: shipped" right after a leading --- still reads as front matter.
-META_LINE = re.compile(r"\s*[a-z_][a-z0-9_]*\s*:(?:\s|$)")
+META_LINE = re.compile(r"\s*[a-z_][a-z0-9_]*\s*:(?!//)")
 
 Images = dict[int, tuple[str, ...]]
 
@@ -85,6 +85,7 @@ def parse(text: str) -> tuple[dict[str, str], tuple[str, ...], Images]:
     lines = text.split("\n")
     end = _front_matter_end(lines)
     head, body = ([], text) if end is None else (lines[1:end], "\n".join(lines[end + 1:]))
+    head = [line for line in head if not line.lstrip().startswith("#")]
     meta = {
         key.strip(): val.strip().strip("\"'")
         for key, sep, val in (line.partition(":") for line in head)

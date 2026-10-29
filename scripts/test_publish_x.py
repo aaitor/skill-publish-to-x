@@ -124,6 +124,11 @@ def test_a_leading_divider_is_not_front_matter():
 
 def test_front_matter_may_start_with_a_comment_line():
     assert parse("---\n# draft\naccount: alice\n---\nhi") == ({"account": "alice"}, ("hi",), {})
+    assert parse("---\n# status: draft\naccount: alice\n---\nhi")[0] == {"account": "alice"}
+
+
+def test_front_matter_value_may_follow_the_colon_directly():
+    assert parse("---\naccount:alice\n---\nhi") == ({"account": "alice"}, ("hi",), {})
 
 
 def test_unclosed_front_matter_is_an_error():
