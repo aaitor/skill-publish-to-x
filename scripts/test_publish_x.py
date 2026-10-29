@@ -113,6 +113,16 @@ def test_front_matter_is_optional():
     assert parse("1/ first\n---\n2/ second") == ({}, ("1/ first", "2/ second"), {})
 
 
+def test_a_leading_divider_is_not_front_matter():
+    # The first post must never be swallowed as front matter.
+    assert parse("---\n1/ first\n---\n2/ second") == ({}, ("1/ first", "2/ second"), {})
+    assert parse("---\nNote: we shipped\n---\nmore") == ({}, ("Note: we shipped", "more"), {})
+
+
+def test_front_matter_may_start_with_a_comment_line():
+    assert parse("---\n# draft\naccount: alice\n---\nhi") == ({"account": "alice"}, ("hi",), {})
+
+
 def test_unclosed_front_matter_is_an_error():
     with pytest.raises(ValueError, match="front matter"):
         parse("---\naccount: alice\nno closing line")
@@ -375,6 +385,11 @@ def test_account_flag_wins_over_the_setting(tmp_path, capsys):
     write_piece(tmp_path, "hi")
     assert main([str(tmp_path), "--account", "bob"], settings={"X_ACCOUNT": "alice"}) == 0
     assert "-> @bob" in capsys.readouterr().out
+
+
+def test_an_empty_account_flag_is_not_a_confirmation(thread, capsys):
+    assert main([str(thread), "--account", ""], settings={"X_ACCOUNT": "alice"}) == 1
+    assert "pass --account alice to confirm" in capsys.readouterr().err
 
 
 def test_settings_are_loaded_when_not_given(tmp_path, capsys):

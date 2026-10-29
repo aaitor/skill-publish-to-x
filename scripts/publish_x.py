@@ -42,6 +42,8 @@ URL = re.compile(r"""https?://\S*[^\s.,;:!?)\]}'"]""")
 POST_REF = re.compile(r"\bpost\s+(\d+)", re.I)
 IMAGE = re.compile(r"[\w./-]+\.(?:png|jpe?g|gif|webp)\b", re.I)
 HANDLE = re.compile(r"[A-Za-z0-9_]{1,15}")
+# ponytail: a post whose first line is lowercase "word: text" after a leading --- still reads as front matter.
+META_LINE = re.compile(r"\s*[a-z_][a-z0-9_]*\s*:")
 
 Images = dict[int, tuple[str, ...]]
 
@@ -64,16 +66,24 @@ def _comment_images(comment: str) -> Images:
     return found
 
 
+def _front_matter_end(lines: list[str]) -> int | None:
+    """Index of the --- closing a leading `key: value` block, or None when the file has no front matter."""
+    if lines[0].strip() != "---":
+        return None
+    end = next((i for i, line in enumerate(lines[1:], 1) if line.strip() == "---"), None)
+    head = [line for line in lines[1:end] if line.strip() and not line.lstrip().startswith("#")]
+    if not head or not META_LINE.match(head[0]):
+        return None  # a leading --- divider, not front matter
+    if end is None:
+        raise ValueError("front matter is not closed (add a --- line after it)")
+    return end
+
+
 def parse(text: str) -> tuple[dict[str, str], tuple[str, ...], Images]:
     """File text -> (front matter, posts, {post number: image paths}). Front matter is optional."""
     lines = text.split("\n")
-    if lines[0].strip() == "---":
-        end = next((i for i, line in enumerate(lines[1:], 1) if line.strip() == "---"), None)
-        if end is None:
-            raise ValueError("front matter is not closed (add a --- line after it)")
-        head, body = lines[1:end], "\n".join(lines[end + 1:])
-    else:
-        head, body = [], text
+    end = _front_matter_end(lines)
+    head, body = ([], text) if end is None else (lines[1:end], "\n".join(lines[end + 1:]))
     meta = {
         key.strip(): val.strip().strip("\"'")
         for key, sep, val in (line.partition(":") for line in head)
@@ -223,11 +233,12 @@ def main(argv: list[str], settings: Mapping[str, str] | None = None,
         meta, posts, images = parse(file.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         return _fail(f"{file}: {e}")
-    account = (args.account or settings.get("X_ACCOUNT") or meta.get("account") or "").lstrip("@")
+    flag = (args.account or "").lstrip("@")  # an empty --account confirms nothing
+    account = (flag or settings.get("X_ACCOUNT") or meta.get("account") or "").lstrip("@")
     if not account:
         return _fail("no account to post to: pass --account <handle> or set X_ACCOUNT (see README.md)")
     _show(file, meta, posts, images, account)
-    if errors := check(file.parent, meta, posts, images, account, args.account is not None):
+    if errors := check(file.parent, meta, posts, images, account, bool(flag)):
         return _fail("\n".join(errors))
     if not args.live:
         print(f"\nDry run: nothing posted. Re-run with --live to post this thread to @{account}.")

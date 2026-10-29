@@ -56,6 +56,7 @@ Setup errors:
 
 ## Notes
 
+- **Credentials:** the script reads them itself. Never read, print, copy or commit the credentials file or any `X_*` value, and never ask the user to paste one into the chat.
 - **Cost:** X bills each request (pay-per-use credits). A post with a link costs much more than one without. Check prices in the README.
 - **Threads:** number posts (`1/`, `2/`) if the user wants; the script does not add numbering.
 - **Length:** X weighs emoji and CJK characters as 2; the counter counts them as 1, so keep a margin when a post uses them.

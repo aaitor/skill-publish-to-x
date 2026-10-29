@@ -169,7 +169,7 @@ account: yourhandle
 2/ Thanks to everyone who tested the beta.
 ```
 
-- **Front matter** (between the first two `---` lines) is optional. `account` is the handle the text was written for. If it differs from the account you post to, the script asks you to confirm with `--account`.
+- **Front matter** is optional: lowercase `key: value` lines between the first two `---` lines. A file that starts with `---` followed by ordinary text has no front matter, so its first post is kept. `account` is the handle the text was written for. If it differs from the account you post to, the script asks you to confirm with `--account`.
 - **Posts** are separated by a line holding only `---`. A single post has no separators.
 - **HTML comments** are never posted and never count toward the 280 characters.
 - **Images** are declared in a comment as `post N: <path>`, relative to the file and inside its folder.
