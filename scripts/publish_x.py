@@ -42,8 +42,9 @@ URL = re.compile(r"""https?://\S*[^\s.,;:!?)\]}'"]""")
 POST_REF = re.compile(r"\bpost\s+(\d+)", re.I)
 IMAGE = re.compile(r"[\w./-]+\.(?:png|jpe?g|gif|webp)\b", re.I)
 HANDLE = re.compile(r"[A-Za-z0-9_]{1,15}")
-# ponytail: a post whose first line is lowercase "word: text" after a leading --- still reads as front matter.
-META_LINE = re.compile(r"\s*[a-z_][a-z0-9_]*\s*:")
+# A YAML-style "key: value" line: lowercase key, colon then a space or the end (never "https://").
+# ponytail: a one-line post like "note: shipped" right after a leading --- still reads as front matter.
+META_LINE = re.compile(r"\s*[a-z_][a-z0-9_]*\s*:(?:\s|$)")
 
 Images = dict[int, tuple[str, ...]]
 
@@ -76,7 +77,7 @@ def _front_matter_end(lines: list[str]) -> int | None:
         return None  # a leading --- divider, not front matter
     if end is None:
         raise ValueError("front matter is not closed (add a --- line after it)")
-    return end
+    return end if all(META_LINE.match(line) for line in head) else None
 
 
 def parse(text: str) -> tuple[dict[str, str], tuple[str, ...], Images]:

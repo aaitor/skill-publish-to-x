@@ -117,6 +117,8 @@ def test_a_leading_divider_is_not_front_matter():
     # The first post must never be swallowed as front matter.
     assert parse("---\n1/ first\n---\n2/ second") == ({}, ("1/ first", "2/ second"), {})
     assert parse("---\nNote: we shipped\n---\nmore") == ({}, ("Note: we shipped", "more"), {})
+    assert parse("---\nhttps://example.com is live\n---\nmore") == ({}, ("https://example.com is live", "more"), {})
+    assert parse("---\nnote: shipped today\nand it works\n---\nmore")[1] == ("note: shipped today\nand it works", "more")
 
 
 def test_front_matter_may_start_with_a_comment_line():
@@ -329,6 +331,7 @@ def test_missing_settings_file_uses_the_environment(tmp_path):
     assert load_settings(tmp_path / "nope.env", {"X_ACCOUNT": "alice"}) == {"X_ACCOUNT": "alice"}
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
 def test_settings_file_readable_by_others_warns(tmp_path, capsys):
     path = tmp_path / "credentials.env"
     path.write_text("X_ACCOUNT=alice\n")
