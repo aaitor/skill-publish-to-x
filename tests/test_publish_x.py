@@ -283,8 +283,9 @@ def test_oauth2_access_token_is_never_used_for_oauth1():
 
 
 def test_client_is_built_from_env():
+    # Both tokens set, as in the shared credentials file: the OAuth 1.0a one must win.
     with patch("tweepy.Client") as client_cls:
-        make_client(CREDS)
+        make_client({**CREDS, "X_ACCESS_TOKEN": "oauth2"})
     client_cls.assert_called_once_with(
         consumer_key="k", consumer_secret="ks", access_token="t", access_token_secret="ts"
     )
