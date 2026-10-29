@@ -232,7 +232,11 @@ def main(argv: list[str], settings: Mapping[str, str] | None = None,
                                       "required when the file is written for another account")
     ap.add_argument("--live", action="store_true", help="post for real; without it nothing is sent to X")
     args = ap.parse_args(argv)
-    settings = load_settings() if settings is None else settings
+    if settings is None:
+        try:
+            settings = load_settings()
+        except (OSError, ValueError) as e:  # ValueError covers a file that is not UTF-8
+            return _fail(f"cannot read {CREDENTIALS_FILE}: {e}")
     file = args.path / "x.md" if args.path.is_dir() else args.path
 
     try:

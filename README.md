@@ -200,6 +200,7 @@ Use it in line with X's [Developer Agreement and Policy](https://developer.x.com
 | Symptom | Fix |
 |---|---|
 | `missing credentials: X_...` | Create `credentials.env` (see [Configuration](#3-configuration)), or export the variables. |
+| `cannot read ~/.config/x-publisher/credentials.env` | Make the file readable by you (`chmod 600`) and save it as plain UTF-8 text. |
 | `no account to post to` | Pass `--account <handle>` or set `X_ACCOUNT`. |
 | `the file is written for @a, not @b` | The file's `account:` differs from the target. Rerun with `--account b` if that is intended. |
 | `the X credentials are for @a, not @b` | Your access token belongs to another account. Generate one for the right account (see [Create an X app](#2-create-an-x-app)). |

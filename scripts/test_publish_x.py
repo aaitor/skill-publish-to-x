@@ -451,9 +451,17 @@ def test_dry_run_prints_the_thread_and_calls_nothing(thread, capsys):
     assert "front matter: account: acme, status: draft" in out  # what the first --- block was read as
 
 
-def test_main_accepts_any_file_path(tmp_path):
+def test_main_accepts_any_file_path(tmp_path, capsys):
     (tmp_path / "post.txt").write_text("A single post, no front matter.")
     assert main([str(tmp_path / "post.txt"), "--account", "alice"], settings={}, client_factory=Mock()) == 0
+    assert "front matter:" not in capsys.readouterr().out
+
+
+def test_unreadable_settings_file_is_a_clean_error(tmp_path, capsys):
+    write_piece(tmp_path, "hi")
+    with patch.object(publish_x, "load_settings", side_effect=UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad")):
+        assert main([str(tmp_path)]) == 1
+    assert "ERROR: cannot read" in capsys.readouterr().err
 
 
 def test_main_missing_file(tmp_path, capsys):
