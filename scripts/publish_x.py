@@ -42,8 +42,7 @@ URL = re.compile(r"""https?://\S*[^\s.,;:!?)\]}'"]""")
 POST_REF = re.compile(r"\bpost\s+(\d+)", re.I)
 IMAGE = re.compile(r"[\w./-]+\.(?:png|jpe?g|gif|webp)\b", re.I)
 HANDLE = re.compile(r"[A-Za-z0-9_]{1,15}")
-# A "key: value" line: lowercase key, then a colon that does not start a link ("https://").
-# ponytail: a one-line post like "note: shipped" right after a leading --- still reads as front matter.
+# A front matter line: lowercase key, then a colon that does not start a link ("https://").
 META_LINE = re.compile(r"\s*[a-z_][a-z0-9_]*\s*:(?!//)")
 
 Images = dict[int, tuple[str, ...]]
@@ -68,16 +67,19 @@ def _comment_images(comment: str) -> Images:
 
 
 def _front_matter_end(lines: list[str]) -> int | None:
-    """Index of the --- closing a leading `key: value` block, or None when the file has no front matter."""
+    """Index of the --- closing the front matter, or None when the file does not start with ---.
+
+    A leading --- always opens front matter, never a post: guessing which it is dropped posts.
+    """
     if lines[0].strip() != "---":
         return None
     end = next((i for i, line in enumerate(lines[1:], 1) if line.strip() == "---"), None)
-    head = [line for line in lines[1:end] if line.strip() and not line.lstrip().startswith("#")]
-    if not head or not META_LINE.match(head[0]):
-        return None  # a leading --- divider, not front matter
     if end is None:
         raise ValueError("front matter is not closed: add a --- line after it, or remove the leading --- if it is a post")
-    return end if all(META_LINE.match(line) for line in head) else None
+    head = (line.strip() for line in lines[1:end] if line.strip() and not line.lstrip().startswith("#"))
+    if bad := next((line for line in head if not META_LINE.match(line)), None):
+        raise ValueError(f"front matter line {bad[:40]!r} is not 'key: value' (if it is a post, remove the leading ---)")
+    return end
 
 
 def parse(text: str) -> tuple[dict[str, str], tuple[str, ...], Images]:
@@ -179,8 +181,8 @@ def publish(client: tweepy.Client, folder: Path, posts: tuple[str, ...], images:
 def _env_value(val: str) -> str:
     """A value as a shell would read it: quoted text kept whole, else a trailing ' # comment' dropped."""
     quote = val[:1]
-    if quote in ("'", '"') and quote in val[1:]:
-        return val[1:val.index(quote, 1)]
+    if quote in ("'", '"'):
+        return val[1:].split(quote, 1)[0]  # an unclosed quote runs to the end of the line
     return re.sub(r"\s+#.*", "", val)
 
 
@@ -209,6 +211,8 @@ def make_client(settings: Mapping[str, str]) -> tweepy.Client:
 
 def _show(file: Path, meta: Mapping[str, str], posts: tuple[str, ...], images: Images, account: str) -> None:
     print(f"{file} -> @{account}")
+    if meta:
+        print("front matter: " + ", ".join(f"{key}: {val}" for key, val in meta.items()))
     for n, post in enumerate(posts, 1):
         attach = ", ".join(images.get(n, ())) or "none"
         print(f"\npost {n}/{len(posts)} · {x_length(post)}/{X_MAX} chars · images: {attach}\n{post}")

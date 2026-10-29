@@ -34,7 +34,7 @@ account: theirhandle
 2/ Second post, published as a reply to the first.
 ```
 
-- Front matter is optional. `account` is the handle the text was written for.
+- Front matter is optional. A file that starts with `---` always opens it, so never put `---` before the first post. `account` is the handle the text was written for.
 - Posts are separated by a line holding only `---`; a single post has none. Each post is at most 280 characters, a link counting as 23.
 - HTML comments are never posted or counted. Declare images in one as `post N: <path>`, relative to the file and inside its folder: PNG, JPG or WEBP, 5 MB and 4 per post at most.
 

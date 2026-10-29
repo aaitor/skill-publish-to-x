@@ -169,7 +169,7 @@ account: yourhandle
 2/ Thanks to everyone who tested the beta.
 ```
 
-- **Front matter** is optional: lowercase `key: value` lines between the first two `---` lines. A file that starts with `---` followed by ordinary text has no front matter, so its first post is kept. `account` is the handle the text was written for. If it differs from the account you post to, the script asks you to confirm with `--account`.
+- **Front matter** is optional: lowercase `key: value` lines between the first two `---` lines. A file that starts with `---` always opens front matter, so don't put `---` before the first post. The preview shows the front matter it read. `account` is the handle the text was written for. If it differs from the account you post to, the script asks you to confirm with `--account`.
 - **Posts** are separated by a line holding only `---`. A single post has no separators.
 - **HTML comments** are never posted and never count toward the 280 characters.
 - **Images** are declared in a comment as `post N: <path>`, relative to the file and inside its folder.
@@ -208,6 +208,7 @@ Use it in line with X's [Developer Agreement and Policy](https://developer.x.com
 | An error about credits or spend | Add credits or raise your spending limit in the Developer Console. |
 | `429 Too Many Requests` | Rate limited. Wait and retry; if it happened mid-thread, do not rerun (see below). |
 | `post N of M failed ... already live` | Part of the thread is live. Don't rerun; delete those posts or finish the thread by hand. |
+| `front matter line '...' is not 'key: value'` | The file starts with `---`, so its first block is read as front matter. If that block is a post, remove the leading `---`. |
 | `post N is 291 characters` | Shorten it. Links count as 23, whatever their length. |
 | `GIFs are not supported` | Convert to PNG, JPG or WEBP. |
 | Cannot reach X, or `uv` cannot install tweepy | No network, or the agent's sandbox blocks it (see [Network access in Codex](#network-access-in-codex)). |

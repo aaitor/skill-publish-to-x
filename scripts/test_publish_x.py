@@ -113,12 +113,12 @@ def test_front_matter_is_optional():
     assert parse("1/ first\n---\n2/ second") == ({}, ("1/ first", "2/ second"), {})
 
 
-def test_a_leading_divider_is_not_front_matter():
-    # The first post must never be swallowed as front matter.
-    assert parse("---\n1/ first\n---\n2/ second") == ({}, ("1/ first", "2/ second"), {})
-    assert parse("---\nNote: we shipped\n---\nmore") == ({}, ("Note: we shipped", "more"), {})
-    assert parse("---\nhttps://example.com is live\n---\nmore") == ({}, ("https://example.com is live", "more"), {})
-    assert parse("---\nnote: shipped today\nand it works\n---\nmore")[1] == ("note: shipped today\nand it works", "more")
+def test_a_post_after_a_leading_divider_is_an_error():
+    # A leading --- always opens front matter, so a post there is never swallowed silently.
+    for text in ("---\n1/ first\n---\n2/ second", "---\nNote: we shipped\n---\nmore",
+                 "---\nhttps://example.com is live\n---\nmore", "---\nnote: shipped today\nand it works\n---\nmore"):
+        with pytest.raises(ValueError, match="is not 'key: value'.*remove the leading ---"):
+            parse(text)
     assert parse("---\n---\nhello") == ({}, ("hello",), {})
 
 
@@ -134,7 +134,7 @@ def test_front_matter_value_may_follow_the_colon_directly():
 def test_unclosed_front_matter_is_an_error():
     # Unclosed "key: value" lines may be front matter missing its --- or a post after a divider:
     # never post them, and name both fixes.
-    for text in ("---\naccount: alice\nno closing line", "---\nnote: just shipped this"):
+    for text in ("---\naccount: alice\nno closing line", "---\nnote: just shipped this", "---\nhello"):
         with pytest.raises(ValueError, match="add a --- line after it, or remove the leading ---"):
             parse(text)
 
@@ -328,6 +328,13 @@ def test_trailing_comments_are_dropped_like_a_shell_would(tmp_path):
     assert load_settings(path, {}) == {"X_CONSUMER_KEY": "abc123", "X_ACCOUNT": "ali # ce", "X_CONSUMER_KEY_SECRET": "a#b"}
 
 
+def test_an_unclosed_quote_is_not_kept_in_the_value(tmp_path):
+    path = tmp_path / "credentials.env"
+    path.write_text('X_CONSUMER_KEY="abc\nX_ACCOUNT=\'alice\n')
+    path.chmod(0o600)
+    assert load_settings(path, {}) == {"X_CONSUMER_KEY": "abc", "X_ACCOUNT": "alice"}
+
+
 def test_environment_wins_over_the_file(tmp_path):
     path = tmp_path / "credentials.env"
     path.write_text("X_CONSUMER_KEY=from-file\nX_ACCOUNT=alice\n")
@@ -441,6 +448,7 @@ def test_dry_run_prints_the_thread_and_calls_nothing(thread, capsys):
         assert f"post {n}/4" in out and f"assets/{name}" in out
     assert "https://example.com/blog/importer" in out
     assert "Dry run: nothing posted" in out and "@alice" in out
+    assert "front matter: account: acme, status: draft" in out  # what the first --- block was read as
 
 
 def test_main_accepts_any_file_path(tmp_path):
