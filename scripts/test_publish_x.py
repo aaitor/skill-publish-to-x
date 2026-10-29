@@ -12,6 +12,7 @@ import requests
 import tweepy
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import publish_x  # noqa: E402
 from publish_x import check, load_settings, main, make_client, parse, publish, x_length  # noqa: E402
 
 THREAD = """---
@@ -360,6 +361,20 @@ def test_client_is_built_from_settings():
 def test_x_account_setting_is_the_default_target(tmp_path, capsys):
     write_piece(tmp_path, "hi")
     assert main([str(tmp_path)], settings={"X_ACCOUNT": "@alice"}) == 0
+    assert "-> @alice" in capsys.readouterr().out
+
+
+def test_account_flag_wins_over_the_setting(tmp_path, capsys):
+    write_piece(tmp_path, "hi")
+    assert main([str(tmp_path), "--account", "bob"], settings={"X_ACCOUNT": "alice"}) == 0
+    assert "-> @bob" in capsys.readouterr().out
+
+
+def test_settings_are_loaded_when_not_given(tmp_path, capsys):
+    write_piece(tmp_path, "hi")
+    with patch.object(publish_x, "load_settings", return_value={"X_ACCOUNT": "alice"}) as load:
+        assert main([str(tmp_path)]) == 0
+    load.assert_called_once_with()
     assert "-> @alice" in capsys.readouterr().out
 
 
