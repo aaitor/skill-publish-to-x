@@ -300,6 +300,13 @@ def test_settings_file_is_parsed(tmp_path):
     assert load_settings(path, {}) == {"X_CONSUMER_KEY": "k", "X_CONSUMER_KEY_SECRET": "ks", "X_ACCOUNT": "alice"}
 
 
+def test_trailing_comments_are_dropped_like_a_shell_would(tmp_path):
+    path = tmp_path / "credentials.env"
+    path.write_text('X_CONSUMER_KEY=abc123   # my key\nX_ACCOUNT="ali # ce"  # quoted keeps it\nX_CONSUMER_KEY_SECRET=a#b\n')
+    path.chmod(0o600)
+    assert load_settings(path, {}) == {"X_CONSUMER_KEY": "abc123", "X_ACCOUNT": "ali # ce", "X_CONSUMER_KEY_SECRET": "a#b"}
+
+
 def test_environment_wins_over_the_file(tmp_path):
     path = tmp_path / "credentials.env"
     path.write_text("X_CONSUMER_KEY=from-file\nX_ACCOUNT=alice\n")

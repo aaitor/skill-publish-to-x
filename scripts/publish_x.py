@@ -164,6 +164,14 @@ def publish(client: tweepy.Client, folder: Path, posts: tuple[str, ...], images:
     return ids
 
 
+def _env_value(val: str) -> str:
+    """A value as a shell would read it: quoted text kept whole, else a trailing ' # comment' dropped."""
+    quote = val[:1]
+    if quote in ("'", '"') and quote in val[1:]:
+        return val[1:val.index(quote, 1)]
+    return re.sub(r"\s+#.*", "", val)
+
+
 def load_settings(path: Path = CREDENTIALS_FILE, environ: Mapping[str, str] = os.environ) -> dict[str, str]:
     """X_* settings from KEY=VALUE lines in the credentials file; non-empty environment variables win."""
     found = {}
@@ -173,7 +181,7 @@ def load_settings(path: Path = CREDENTIALS_FILE, environ: Mapping[str, str] = os
         for line in path.read_text(encoding="utf-8").splitlines():
             key, sep, val = line.strip().removeprefix("export ").partition("=")
             if sep and key.strip().startswith("X_"):
-                found[key.strip()] = val.strip().strip("\"'")
+                found[key.strip()] = _env_value(val.strip())
     return {**found, **{k: v for k, v in environ.items() if k.startswith("X_") and v}}
 
 
